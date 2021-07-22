@@ -1040,6 +1040,8 @@ class BenchmarkCNN(object):
       Dictionary containing training statistics (num_workers, num_steps,
       average_wall_time, images_per_sec).
     """
+    print("_benchmark_cnn:")
+
     if self.params.variable_update == 'distributed_all_reduce':
       self.single_session = True
       (image_producer_ops, enqueue_ops, fetches) = (
@@ -1054,11 +1056,16 @@ class BenchmarkCNN(object):
         not self.params.cross_replica_sync):
       execution_barrier = self.add_sync_queues_and_barrier(
           'execution_barrier_', [])
+    print ("single_session", self.single_session)
+    print ("enqueue_ops", enqueue_ops)
+    print ("fetches", fetches)
+
 
     global_step = tf.train.get_global_step()
     with tf.device(self.global_step_device):
       with tf.control_dependencies([main_fetch_group]):
         fetches['inc_global_step'] = global_step.assign_add(1)
+    print ("global_step", global_step)
 
     if ((not self.single_session) and self.job_name and
         self.params.cross_replica_sync):
@@ -1071,6 +1078,7 @@ class BenchmarkCNN(object):
     with tf.control_dependencies([local_var_init_op]):
       variable_mgr_init_ops.extend(self.variable_mgr.get_post_init_ops())
     local_var_init_op_group = tf.group(*variable_mgr_init_ops)
+    print ("local_var_init_op", local_var_init_op)
 
     summary_op = tf.summary.merge_all()
     is_chief = (not self.job_name or self.task_index == 0)
@@ -1079,6 +1087,7 @@ class BenchmarkCNN(object):
         self.params.save_summaries_steps > 0):
       summary_writer = tf.summary.FileWriter(self.params.train_dir,
                                              tf.get_default_graph())
+    print ("Summary_op", summary_op)
 
     # We want to start the benchmark timer right after a image_producer barrier
     # and avoids undesired wating times on barriers.
@@ -1108,6 +1117,7 @@ class BenchmarkCNN(object):
       # in replicated mode).
       ready_for_local_init_op = tf.report_uninitialized_variables(
           tf.global_variables())
+    print ("is_chief", is_chief)
     sv = tf.train.Supervisor(
         is_chief=is_chief,
         logdir=self.params.train_dir,
@@ -1124,12 +1134,14 @@ class BenchmarkCNN(object):
         self.params.summary_verbosity >= 1 or
         self.dataset.queue_runner_required())
     target = self.cluster_manager.get_target() if self.cluster_manager else ''
+    print ("target", target)
     with sv.managed_session(
         master=target,
         config=create_config_proto(self.params),
         start_standard_services=start_standard_services) as sess:
       image_producer = cnn_util.ImageProducer(sess, image_producer_ops,
                                               self.batch_group_size)
+      print ("sess", sess)
       image_producer.start()
       for i in xrange(len(enqueue_ops)):
         sess.run(enqueue_ops[:(i + 1)])
